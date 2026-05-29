@@ -13,7 +13,7 @@ Fork of [Prism Launcher](https://github.com/PrismLauncher/PrismLauncher) enablin
 Get the latest release from the [**Releases Page**](https://github.com/Diegiwg/PrismLauncher-Cracked/releases).
 
 ## PrismLauncher With Bypass CurseFoge Download
-[**Releases Page**]([https://github.com/Diegiwg/PrismLauncher-Cracked/releases](https://github.com/pescadordegoiaba/PrismLauncher-Cracked-Repo/releases/download/Cracked/PrismLauncher-Cracked-x86_64.AppImage)).
+[**Releases Page**](https://github.com/pescadordegoiaba/PrismLauncher-Cracked-Repo/releases/download/Cracked/PrismLauncher-Cracked-x86_64.AppImage).
 
 > [!WARNING]
 > DO NOT use official Microsoft/Mojang accounts with this launcher. This bypasses authentication and is intended for offline play only. Using with official servers may violate Minecraft's Terms of Service.
