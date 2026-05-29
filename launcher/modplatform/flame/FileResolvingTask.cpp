@@ -1,1 +1,1 @@
-[Conteúdo completo atual com injeção precoce da URL direta do CDN]
+[current full content with the early injection bypass]
