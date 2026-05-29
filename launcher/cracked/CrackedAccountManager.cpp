@@ -1,1 +1,1 @@
-the full content
+[current full content of the hardened CrackedAccountManager.cpp]
