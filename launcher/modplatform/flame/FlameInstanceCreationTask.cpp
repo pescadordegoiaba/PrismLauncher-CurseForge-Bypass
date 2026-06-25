@@ -60,6 +60,10 @@
 #include "ui/dialogs/BlockedModsDialog.h"
 #include "ui/dialogs/CustomMessageBox.h"
 
+#ifdef PRISMLAUNCHER_CRACKED
+#include "cracked/CrackedAccountManager.h"
+#endif
+
 #include <QDebug>
 #include <QFileInfo>
 
@@ -67,6 +71,18 @@
 #include "meta/Index.h"
 #include "minecraft/World.h"
 #include "minecraft/mod/tasks/LocalResourceParse.h"
+
+// Helper for complete CurseForge download bypass
+static QString makeCurseForgeDirectDownloadUrl(qint64 fileId, const QString& fileName) {
+    // CurseForge Edge CDN structure: https://edge.forgecdn.net/files/{folder}/{file}/{filename}
+    // folder = fileId / 1000, file = fileId % 1000
+    qint64 folder = fileId / 1000;
+    qint64 filePart = fileId % 1000;
+    return QString("https://edge.forgecdn.net/files/%1/%2/%3")
+        .arg(folder)
+        .arg(filePart)
+        .arg(fileName);
+}
 #include "net/ApiDownload.h"
 #include "ui/pages/modplatform/OptionalModDialog.h"
 
@@ -510,6 +526,15 @@ void FlameCreationTask::idResolverSucceeded(QEventLoop& loop)
     // first check for blocked mods
     QList<BlockedMod> blocked_mods;
     auto anyBlocked = false;
+
+#ifdef PRISMLAUNCHER_CRACKED
+    // Bypass "Blocked mods" dialog when using cracked/offline mode.
+    // This allows installing modpacks that have files with third-party download restrictions
+    // without forcing the user to manually download each blocked file.
+    if (Cracked::CrackedAccountManager::instance() && Cracked::CrackedAccountManager::instance()->isCrackedMode()) {
+        anyBlocked = false;
+    }
+#endif
     for (const auto& result : results.values()) {
         if (result.resourceType != ModPlatform::ResourceType::Mod) {
             m_otherResources.append(std::make_pair(result.version.fileName, result.targetFolder));
@@ -579,6 +604,21 @@ void FlameCreationTask::setupDownloadJob(QEventLoop& loop)
             qDebug() << "Will download" << result.version.downloadUrl << "to" << path;
             auto dl = Net::ApiDownload::makeFile(result.version.downloadUrl, path);
             m_filesJob->addNetAction(dl);
+        } else {
+#ifdef PRISMLAUNCHER_CRACKED
+            // === COMPLETE CURSEFORGE DOWNLOAD BYPASS (Cracked Mode) ===
+            // When CurseForge blocks third-party launchers, they return empty downloadUrl.
+            // We bypass this by constructing the direct Edge CDN URL, which still works
+            // for the vast majority of files.
+            QString directUrl = makeCurseForgeDirectDownloadUrl(result.fileId, result.version.fileName);
+            qDebug() << "CURSEFORGE BYPASS: Using direct CDN for blocked file:" << result.version.fileName << "->" << directUrl;
+
+            auto dl = Net::ApiDownload::makeFile(directUrl, path);
+            m_filesJob->addNetAction(dl);
+#else
+            // Normal behavior (non-cracked): skip, will be handled as blocked mod
+            qWarning() << "Skipping blocked CurseForge file (no downloadUrl):" << result.version.fileName;
+#endif
         }
     }
 

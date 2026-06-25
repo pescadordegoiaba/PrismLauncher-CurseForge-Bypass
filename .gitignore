@@ -27,6 +27,15 @@ compile_commands.json
 # Build dirs
 build
 /build-*
+/.msys2-win64/
+/AppDir/
+/release-assets/
+*.AppImage
+build.log
+
+# Local packaging tools
+/tools/appimagetool
+/tools/linuxdeploy*.AppImage
 
 # Install dirs
 install

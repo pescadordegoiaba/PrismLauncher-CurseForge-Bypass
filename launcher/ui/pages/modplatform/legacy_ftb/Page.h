@@ -45,6 +45,8 @@
 #include "ui/pages/modplatform/ModpackProviderBasePage.h"
 
 class NewInstanceDialog;
+class QLabel;
+class QMovie;
 
 namespace LegacyFTB {
 
@@ -76,6 +78,10 @@ class Page : public QWidget, public ModpackProviderBasePage {
     virtual QString getSerachTerm() const override;
 
    private:
+    void applyLegacyVisualStyle();
+    void configurePackList(QTreeView* list);
+    void updateFooterStatus();
+    void updatePrivateActions();
     void suggestCurrent();
     void onPackSelectionChanged(Modpack* pack = nullptr);
 
@@ -105,6 +111,12 @@ class Page : public QWidget, public ModpackProviderBasePage {
     FilterModel* currentModel = nullptr;
     QTreeView* currentList = nullptr;
     QTextBrowser* currentModpackInfo = nullptr;
+    QLabel* lavaTopLabel = nullptr;
+    QLabel* lavaBottomLabel = nullptr;
+    QLabel* statusLabel = nullptr;
+    QLabel* selectedPackLabel = nullptr;
+    QMovie* lavaTopMovie = nullptr;
+    QMovie* lavaBottomMovie = nullptr;
 
     bool initialized = false;
     Modpack selected;

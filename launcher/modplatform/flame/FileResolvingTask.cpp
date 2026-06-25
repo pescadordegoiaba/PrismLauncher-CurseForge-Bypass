@@ -29,6 +29,19 @@
 #include "net/NetJob.h"
 #include "tasks/Task.h"
 
+#ifdef PRISMLAUNCHER_CRACKED
+#include "cracked/CrackedAccountManager.h"
+
+static QString makeCurseForgeDirectDownloadUrl(qint64 fileId, const QString& fileName) {
+    qint64 folder = fileId / 1000;
+    qint64 filePart = fileId % 1000;
+    return QString("https://edge.forgecdn.net/files/%1/%2/%3")
+        .arg(folder)
+        .arg(filePart)
+        .arg(fileName);
+}
+#endif
+
 #include "Application.h"
 
 static const FlameAPI flameAPI;
@@ -142,6 +155,17 @@ void Flame::FileResolvingTask::netJobFinished(QByteArray* response)
             if (!url.isValid() && "sha1" == version.hash_type && !version.hash.isEmpty()) {
                 hashes.push_back(version.hash);
             }
+
+#ifdef PRISMLAUNCHER_CRACKED
+            // Complete CurseForge download bypass: if downloadUrl is missing (blocked for third parties),
+            // inject the direct Edge CDN URL so the rest of the pipeline treats it as downloadable.
+            if (!url.isValid() && Cracked::CrackedAccountManager::instance() &&
+                Cracked::CrackedAccountManager::instance()->isCrackedMode()) {
+                QString direct = makeCurseForgeDirectDownloadUrl(fileid, version.fileName);
+                m_manifest.files[fileid].version.downloadUrl = direct;
+                qDebug() << "CURSEFORGE BYPASS (FileResolving): Injected direct CDN URL for" << version.fileName;
+            }
+#endif
         } catch (Json::JsonException& e) {
             qCritical() << "Non-JSON data returned from the CF API";
             qCritical() << e.cause();

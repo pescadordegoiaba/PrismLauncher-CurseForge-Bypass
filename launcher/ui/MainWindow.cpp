@@ -55,9 +55,11 @@
 #include <QActionGroup>
 #include <QApplication>
 #include <QButtonGroup>
+#include <QFile>
 #include <QFileDialog>
 #include <QHBoxLayout>
 #include <QHeaderView>
+#include <QHash>
 #include <QInputDialog>
 #include <QKeyEvent>
 #include <QLabel>
@@ -65,8 +67,10 @@
 #include <QMenu>
 #include <QMenuBar>
 #include <QMessageBox>
+#include <QPointer>
 #include <QProgressDialog>
 #include <QShortcut>
+#include <QStandardPaths>
 #include <QStatusBar>
 #include <QToolBar>
 #include <QToolButton>
@@ -102,6 +106,7 @@
 #include "ui/dialogs/ExportPackDialog.h"
 #include "ui/dialogs/IconPickerDialog.h"
 #include "ui/dialogs/ImportResourceDialog.h"
+#include "ui/dialogs/LocalServerDialog.h"
 #include "ui/dialogs/NewInstanceDialog.h"
 #include "ui/dialogs/NewsDialog.h"
 #include "ui/dialogs/ProgressDialog.h"
@@ -143,6 +148,140 @@ QString profileInUseFilter(const QString& profile, bool used)
         return profile;
     }
 }
+
+QString absoluteDataPath(const QString& path)
+{
+    return QFileInfo(path).absoluteFilePath();
+}
+
+bool isDangerousDeleteTarget(const QString& path)
+{
+    const auto absolutePath = QFileInfo(path).absoluteFilePath();
+    const auto homePath = QDir::home().absolutePath();
+    const auto dataPath = QFileInfo(APPLICATION->dataRoot()).absoluteFilePath();
+
+    return absolutePath.isEmpty() || absolutePath == QDir::rootPath() || absolutePath == homePath || absolutePath == dataPath;
+}
+
+bool deleteStoragePath(const QString& label, const QString& path, QStringList& deleted, QStringList& failed)
+{
+    const auto absolutePath = absoluteDataPath(path);
+    if (isDangerousDeleteTarget(absolutePath) || !QFileInfo::exists(absolutePath)) {
+        return true;
+    }
+
+    if (FS::deletePath(absolutePath)) {
+        deleted.append(QString("%1: %2").arg(label, absolutePath));
+        return true;
+    }
+
+    failed.append(QString("%1: %2").arg(label, absolutePath));
+    return false;
+}
+
+#ifdef Q_OS_LINUX
+QString desktopExecPath(const QString& path)
+{
+    QString escaped = path;
+    escaped.replace("\\", "\\\\");
+    escaped.replace("\"", "\\\"");
+    if (escaped.contains(' ')) {
+        escaped = QString("\"%1\"").arg(escaped);
+    }
+    return escaped;
+}
+
+bool writeExecutableScript(const QString& path, const QString& target)
+{
+    const QString script = QString("#!/bin/sh\nexec \"%1\" \"$@\"\n").arg(target);
+    try {
+        FS::write(path, script.toUtf8());
+    } catch (const FS::FileSystemException& e) {
+        qWarning() << "Failed to write launcher wrapper:" << e.cause();
+        return false;
+    }
+
+    return QFile::setPermissions(path,
+                                 QFileDevice::ReadOwner | QFileDevice::WriteOwner | QFileDevice::ExeOwner | QFileDevice::ReadGroup |
+                                     QFileDevice::ExeGroup | QFileDevice::ReadOther | QFileDevice::ExeOther);
+}
+
+bool installLinuxDesktopEntry(QString& installedCommand, QString& desktopFilePath, QString& error)
+{
+    const auto appId = BuildConfig.LAUNCHER_APPID;
+    const auto binaryName = BuildConfig.LAUNCHER_APP_BINARY_NAME;
+    const auto localBinDir = FS::PathCombine(QDir::homePath(), ".local", "bin");
+    const auto localOptDir = FS::PathCombine(QDir::homePath(), ".local", "opt", binaryName);
+    const auto applicationsDir = FS::PathCombine(QDir::homePath(), ".local", "share", "applications");
+    const auto iconDir = FS::PathCombine(FS::PathCombine(QDir::homePath(), ".local", "share", "icons"), "hicolor", "256x256", "apps");
+    const auto commandPath = FS::PathCombine(localBinDir, binaryName);
+
+    if (!FS::ensureFolderPathExists(localBinDir) || !FS::ensureFolderPathExists(applicationsDir) ||
+        !FS::ensureFolderPathExists(iconDir)) {
+        error = QObject::tr("Could not create the user installation folders.");
+        return false;
+    }
+
+    QString targetPath = APPLICATION->applicationFilePath();
+    const QString appImagePath = qEnvironmentVariable("APPIMAGE");
+    if (!appImagePath.isEmpty() && QFileInfo::exists(appImagePath)) {
+        if (!FS::ensureFolderPathExists(localOptDir)) {
+            error = QObject::tr("Could not create the local application folder.");
+            return false;
+        }
+
+        targetPath = FS::PathCombine(localOptDir, QFileInfo(appImagePath).fileName());
+        QFile::remove(targetPath);
+        if (!QFile::copy(appImagePath, targetPath)) {
+            error = QObject::tr("Could not copy the AppImage to %1.").arg(targetPath);
+            return false;
+        }
+        QFile::setPermissions(targetPath,
+                              QFileDevice::ReadOwner | QFileDevice::WriteOwner | QFileDevice::ExeOwner | QFileDevice::ReadGroup |
+                                  QFileDevice::ExeGroup | QFileDevice::ReadOther | QFileDevice::ExeOther);
+    }
+
+    QFile::remove(commandPath);
+    if (!QFile::link(targetPath, commandPath) && !writeExecutableScript(commandPath, targetPath)) {
+        error = QObject::tr("Could not create the launcher command at %1.").arg(commandPath);
+        return false;
+    }
+
+    const auto iconPath = FS::PathCombine(iconDir, QString("%1.png").arg(appId));
+    APPLICATION->logo().pixmap(256, 256).save(iconPath, "PNG");
+
+    desktopFilePath = FS::PathCombine(applicationsDir, QString("%1.desktop").arg(appId));
+    const QString desktopEntry =
+        QString("[Desktop Entry]\n"
+                "Type=Application\n"
+                "Version=1.0\n"
+                "Name=%1\n"
+                "Comment=Minecraft launcher\n"
+                "Exec=%2 %%u\n"
+                "Icon=%3\n"
+                "Terminal=false\n"
+                "Categories=Game;\n"
+                "StartupNotify=true\n"
+                "StartupWMClass=%3\n"
+                "MimeType=x-scheme-handler/%4;\n")
+            .arg(BuildConfig.LAUNCHER_DISPLAYNAME, desktopExecPath(commandPath), appId, binaryName);
+
+    try {
+        FS::write(desktopFilePath, desktopEntry.toUtf8());
+    } catch (const FS::FileSystemException& e) {
+        qWarning() << "Failed to write desktop entry:" << e.cause();
+        error = QObject::tr("Could not write the desktop entry at %1.").arg(desktopFilePath);
+        return false;
+    }
+
+    if (auto updateDesktopDatabase = QStandardPaths::findExecutable("update-desktop-database"); !updateDesktopDatabase.isEmpty()) {
+        QProcess::startDetached(updateDesktopDatabase, { applicationsDir });
+    }
+
+    installedCommand = commandPath;
+    return true;
+}
+#endif
 }  // namespace
 
 MainWindow::MainWindow(QWidget* parent) : QMainWindow(parent), ui(new Ui::MainWindow)
@@ -222,7 +361,7 @@ MainWindow::MainWindow(QWidget* parent) : QMainWindow(parent), ui(new Ui::MainWi
 
         ui->actionCheckUpdate->setVisible(APPLICATION->updaterEnabled());
 
-#ifndef Q_OS_MAC
+#if !defined(Q_OS_MAC) && !defined(Q_OS_LINUX)
         ui->actionAddToPATH->setVisible(false);
 #endif
 
@@ -1420,9 +1559,10 @@ void MainWindow::on_actionClearMetadata_triggered()
     APPLICATION->metacache()->SaveNow();
 }
 
-#ifdef Q_OS_MAC
+#if defined(Q_OS_MAC) || defined(Q_OS_LINUX)
 void MainWindow::on_actionAddToPATH_triggered()
 {
+#ifdef Q_OS_MAC
     auto binaryPath = APPLICATION->applicationFilePath();
     auto targetPath = QString("/usr/local/bin/%1").arg(BuildConfig.LAUNCHER_APP_BINARY_NAME);
     qDebug() << "Symlinking" << binaryPath << "to" << targetPath;
@@ -1440,8 +1580,86 @@ void MainWindow::on_actionAddToPATH_triggered()
         QMessageBox::critical(this, tr("Failed to add %1 to PATH").arg(BuildConfig.LAUNCHER_DISPLAYNAME),
                               tr("An error occurred while trying to add %1 to PATH").arg(BuildConfig.LAUNCHER_DISPLAYNAME));
     }
+#elif defined(Q_OS_LINUX)
+    QString commandPath;
+    QString desktopFilePath;
+    QString error;
+    if (installLinuxDesktopEntry(commandPath, desktopFilePath, error)) {
+        QMessageBox::information(
+            this, tr("Installed %1").arg(BuildConfig.LAUNCHER_DISPLAYNAME),
+            tr("%1 was installed for the current user.\n\nCommand: %2\nDesktop entry: %3\n\nIf %2 is not available in a terminal yet, add "
+               "~/.local/bin to your PATH.")
+                .arg(BuildConfig.LAUNCHER_DISPLAYNAME, commandPath, desktopFilePath));
+    } else {
+        QMessageBox::critical(this, tr("Failed to install %1").arg(BuildConfig.LAUNCHER_DISPLAYNAME), error);
+    }
+#else
+    QMessageBox::information(this, tr("Not supported"), tr("This action is not supported on this platform."));
+#endif
 }
 #endif
+
+void MainWindow::on_actionClearStorageData_triggered()
+{
+    auto response = CustomMessageBox::selectable(
+                        this, tr("Clear storage data"),
+                        tr("This will permanently delete storage-heavy launcher data, including:\n\n"
+                           "- all instances and their mods/worlds/screenshots\n"
+                           "- central mods\n"
+                           "- offline skins\n"
+                           "- managed Java runtimes\n"
+                           "- assets, libraries, metadata, download caches, and logs\n\n"
+                           "Accounts and launcher settings will be kept. This cannot be undone.\n\n"
+                           "Do you want to continue?"),
+                        QMessageBox::Warning, QMessageBox::Yes | QMessageBox::No, QMessageBox::No)
+                        ->exec();
+
+    if (response != QMessageBox::Yes) {
+        return;
+    }
+
+    bool ok = false;
+    const auto confirmation =
+        QInputDialog::getText(this, tr("Confirm storage deletion"), tr("Type DELETE to permanently clear launcher storage data:"),
+                              QLineEdit::Normal, QString(), &ok);
+    if (!ok || confirmation != "DELETE") {
+        return;
+    }
+
+    APPLICATION->metacache()->evictAll();
+    APPLICATION->metacache()->SaveNow();
+
+    QStringList deleted;
+    QStringList failed;
+
+    deleteStoragePath(tr("Instances"), APPLICATION->settings()->get("InstanceDir").toString(), deleted, failed);
+    deleteStoragePath(tr("Central mods"), APPLICATION->settings()->get("CentralModsDir").toString(), deleted, failed);
+    deleteStoragePath(tr("Skins"), APPLICATION->settings()->get("SkinsDir").toString(), deleted, failed);
+    deleteStoragePath(tr("Java"), APPLICATION->settings()->get("JavaDir").toString(), deleted, failed);
+
+    deleteStoragePath(tr("Assets"), "assets", deleted, failed);
+    deleteStoragePath(tr("Libraries"), "libraries", deleted, failed);
+    deleteStoragePath(tr("Forge libraries"), FS::PathCombine("mods", "minecraftforge", "libs"), deleted, failed);
+    deleteStoragePath(tr("Cache"), "cache", deleted, failed);
+    deleteStoragePath(tr("Metadata"), "meta", deleted, failed);
+    deleteStoragePath(tr("Logs"), "logs", deleted, failed);
+
+    refreshInstances();
+    APPLICATION->settings()->set("SelectedInstance", QString());
+    selectionBad();
+
+    if (failed.isEmpty()) {
+        CustomMessageBox::selectable(
+            this, tr("Storage data cleared"),
+            deleted.isEmpty() ? tr("No storage data folders were found to delete.") : tr("Deleted:\n%1").arg(deleted.join('\n')),
+            QMessageBox::Information)
+            ->show();
+    } else {
+        CustomMessageBox::selectable(this, tr("Storage data partially cleared"),
+                                     tr("Deleted:\n%1\n\nFailed:\n%2").arg(deleted.join('\n'), failed.join('\n')), QMessageBox::Warning)
+            ->show();
+    }
+}
 
 void MainWindow::on_actionOpenWiki_triggered()
 {
@@ -1629,6 +1847,36 @@ void MainWindow::on_actionCreateInstanceShortcut_triggered()
     shortcutDlg.createShortcut();
 }
 
+void MainWindow::on_actionCreateLocalServer_triggered()
+{
+    if (!m_selectedInstance)
+        return;
+
+    auto* minecraftInstance = dynamic_cast<MinecraftInstance*>(m_selectedInstance);
+    if (!minecraftInstance) {
+        QMessageBox::warning(this, tr("Cannot create server"), tr("Local servers are only supported for Minecraft instances."));
+        return;
+    }
+
+    static QHash<QString, QPointer<LocalServerDialog>> serverDialogs;
+    const auto key = minecraftInstance->instanceRoot();
+    if (serverDialogs.contains(key) && serverDialogs.value(key)) {
+        auto* existingDialog = serverDialogs.value(key).data();
+        existingDialog->show();
+        existingDialog->raise();
+        existingDialog->activateWindow();
+        return;
+    }
+
+    auto* serverDlg = new LocalServerDialog(minecraftInstance, this);
+    serverDlg->setAttribute(Qt::WA_DeleteOnClose);
+    serverDialogs.insert(key, serverDlg);
+    connect(serverDlg, &QObject::destroyed, this, [key] { serverDialogs.remove(key); });
+    serverDlg->show();
+    serverDlg->raise();
+    serverDlg->activateWindow();
+}
+
 void MainWindow::taskEnd()
 {
     QObject* sender = QObject::sender();
@@ -1769,6 +2017,7 @@ void MainWindow::setInstanceActionsEnabled(bool enabled)
     ui->actionDeleteInstance->setEnabled(enabled);
     ui->actionCopyInstance->setEnabled(enabled);
     ui->actionCreateInstanceShortcut->setEnabled(enabled);
+    ui->actionCreateLocalServer->setEnabled(enabled);
 }
 
 void MainWindow::refreshCurrentInstance()

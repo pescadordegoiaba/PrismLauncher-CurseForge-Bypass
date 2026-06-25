@@ -30,6 +30,7 @@ set(CMAKE_C_STANDARD_REQUIRED true)
 set(CMAKE_CXX_STANDARD 20)
 set(CMAKE_C_STANDARD 11)
 include(GenerateExportHeader)
+include(CheckCXXCompilerFlag)
 
 add_compile_definitions($<$<NOT:$<CONFIG:Debug>>:QT_NO_DEBUG>)
 add_compile_definitions(QT_WARN_DEPRECATED_UP_TO=0x060400)
@@ -81,9 +82,13 @@ else()
         add_link_options("$<$<COMPILE_LANGUAGE:C,CXX>:-Wl,--stack,8388608>")
 
         # -ffunction-sections and -fdata-sections help reduce binary size
-        # -mguard=cf enables Control Flow Guard
+        # -mguard=cf enables Control Flow Guard when supported by the MinGW toolchain
         # TODO: Look into -gc-sections to further reduce binary size
-        add_compile_options("$<$<AND:$<CONFIG:Release,RelWithDebInfo>,$<COMPILE_LANGUAGE:C,CXX>>:-ffunction-sections;-fdata-sections;-mguard=cf>")
+        add_compile_options("$<$<AND:$<CONFIG:Release,RelWithDebInfo>,$<COMPILE_LANGUAGE:C,CXX>>:-ffunction-sections;-fdata-sections>")
+        check_cxx_compiler_flag("-mguard=cf" COMPILER_SUPPORTS_MGUARD_CF)
+        if(COMPILER_SUPPORTS_MGUARD_CF)
+            add_compile_options("$<$<AND:$<CONFIG:Release,RelWithDebInfo>,$<COMPILE_LANGUAGE:C,CXX>>:-mguard=cf>")
+        endif()
     endif()
 endif()
 
@@ -236,6 +241,9 @@ endif()
 
 # Java downloader
 option(Launcher_ENABLE_JAVA_DOWNLOADER "Build the java downloader feature" ${Launcher_ENABLE_JAVA_DOWNLOADER_DEFAULT})
+
+# PrismLauncher-Cracked modular offline support
+option(ENABLE_CRACKED_MODE "Enable cracked/offline-only mode (PrismLauncher-Cracked modular layer)" ON)
 
 # Native libraries
 if(UNIX AND APPLE)

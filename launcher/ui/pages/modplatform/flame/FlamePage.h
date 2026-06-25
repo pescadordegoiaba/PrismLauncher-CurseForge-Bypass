@@ -48,6 +48,8 @@ class FlamePage;
 }
 
 class NewInstanceDialog;
+class QLabel;
+class QMovie;
 
 namespace Flame {
 class ListModel;
@@ -78,6 +80,8 @@ class FlamePage : public QWidget, public ModpackProviderBasePage {
     virtual QString getSerachTerm() const override;
 
    private:
+    void applyPirateLavaVisuals();
+    void updatePirateStatus();
     void suggestCurrent();
 
    private slots:
@@ -95,6 +99,10 @@ class FlamePage : public QWidget, public ModpackProviderBasePage {
     int m_selected_version_index = -1;
 
     ProgressWidget m_fetch_progress;
+    QLabel* m_lavaTopLabel = nullptr;
+    QLabel* m_statusLabel = nullptr;
+    QLabel* m_selectedPackLabel = nullptr;
+    QMovie* m_lavaTopMovie = nullptr;
 
     // Used to do instant searching with a delay to cache quick changes
     QTimer m_search_timer;

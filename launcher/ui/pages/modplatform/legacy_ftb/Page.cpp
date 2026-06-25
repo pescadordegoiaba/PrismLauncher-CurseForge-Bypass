@@ -39,7 +39,16 @@
 #include "ui/widgets/ProjectItem.h"
 #include "ui_Page.h"
 
+#include <QFrame>
+#include <QHBoxLayout>
+#include <QHeaderView>
 #include <QInputDialog>
+#include <QLabel>
+#include <QMovie>
+#include <QPixmap>
+#include <QPushButton>
+#include <QTabBar>
+#include <QAbstractItemView>
 
 #include "Application.h"
 
@@ -60,16 +69,75 @@ Page::Page(NewInstanceDialog* dialog, QWidget* parent) : QWidget(parent), dialog
 
     ui->setupUi(this);
 
+    applyLegacyVisualStyle();
+
+    lavaTopLabel = new QLabel(this);
+    lavaTopLabel->setObjectName(QStringLiteral("legacyLavaStrip"));
+    lavaTopLabel->setFixedHeight(22);
+    lavaTopLabel->setScaledContents(true);
+    lavaTopMovie = new QMovie(QStringLiteral(":/pirate_legacy/lava_retro.gif"), QByteArray(), this);
+    lavaTopMovie->setScaledSize(QSize(640, 22));
+    lavaTopLabel->setMovie(lavaTopMovie);
+    lavaTopMovie->start();
+
+    auto heroFrame = new QFrame(this);
+    heroFrame->setObjectName(QStringLiteral("legacyHero"));
+    auto heroLayout = new QHBoxLayout(heroFrame);
+    heroLayout->setContentsMargins(14, 12, 14, 12);
+    heroLayout->setSpacing(12);
+
+    auto heroIcon = new QLabel(heroFrame);
+    heroIcon->setObjectName(QStringLiteral("legacyHeroIcon"));
+    heroIcon->setPixmap(QPixmap(QStringLiteral(":/pirate_legacy/pirate_emblem.png")).scaled(58, 58, Qt::KeepAspectRatio, Qt::SmoothTransformation));
+    heroIcon->setFixedSize(64, 64);
+    heroIcon->setAlignment(Qt::AlignCenter);
+    heroLayout->addWidget(heroIcon);
+
+    auto heroText = new QWidget(heroFrame);
+    auto heroTextLayout = new QVBoxLayout(heroText);
+    heroTextLayout->setContentsMargins(0, 0, 0, 0);
+    heroTextLayout->setSpacing(2);
+
+    auto title = new QLabel(tr("FTB Legacy Pirate Edition"), heroText);
+    title->setObjectName(QStringLiteral("legacyHeroTitle"));
+    auto subtitle = new QLabel(tr("Classic packs with lava-lit retro seas, skull banners, ships, and crossed blades."), heroText);
+    subtitle->setObjectName(QStringLiteral("legacyHeroSubtitle"));
+    subtitle->setWordWrap(true);
+    heroTextLayout->addWidget(title);
+    heroTextLayout->addWidget(subtitle);
+    heroLayout->addWidget(heroText, 1);
+
+    ui->verticalLayout->insertWidget(0, lavaTopLabel);
+    ui->verticalLayout->insertWidget(1, heroFrame);
+
+    lavaBottomLabel = new QLabel(this);
+    lavaBottomLabel->setObjectName(QStringLiteral("legacyLavaStrip"));
+    lavaBottomLabel->setFixedHeight(18);
+    lavaBottomLabel->setScaledContents(true);
+    lavaBottomMovie = new QMovie(QStringLiteral(":/pirate_legacy/lava_retro.gif"), QByteArray(), this);
+    lavaBottomMovie->setScaledSize(QSize(640, 18));
+    lavaBottomLabel->setMovie(lavaBottomMovie);
+    lavaBottomMovie->start();
+    ui->verticalLayout->insertWidget(2, lavaBottomLabel);
+
+    statusLabel = new QLabel(this);
+    statusLabel->setObjectName(QStringLiteral("legacyStatusLabel"));
+    statusLabel->setAlignment(Qt::AlignCenter);
+    selectedPackLabel = new QLabel(this);
+    selectedPackLabel->setObjectName(QStringLiteral("legacySelectedLabel"));
+    selectedPackLabel->setText(tr("No pack selected"));
+    selectedPackLabel->setAlignment(Qt::AlignCenter);
+    selectedPackLabel->setMinimumWidth(180);
+    ui->horizontalLayout_2->insertWidget(1, statusLabel, 1);
+    ui->horizontalLayout_2->insertWidget(2, selectedPackLabel);
+
     {
         publicFilterModel = new FilterModel(this);
         publicListModel = new ListModel(this);
         publicFilterModel->setSourceModel(publicListModel);
 
         ui->publicPackList->setModel(publicFilterModel);
-        ui->publicPackList->setSortingEnabled(true);
-        ui->publicPackList->header()->hide();
-        ui->publicPackList->setIndentation(0);
-        ui->publicPackList->setIconSize(QSize(42, 42));
+        configurePackList(ui->publicPackList);
 
         for (int i = 0; i < publicFilterModel->getAvailableSortings().size(); i++) {
             ui->sortByBox->addItem(publicFilterModel->getAvailableSortings().keys().at(i));
@@ -84,10 +152,7 @@ Page::Page(NewInstanceDialog* dialog, QWidget* parent) : QWidget(parent), dialog
         thirdPartyFilterModel->setSourceModel(thirdPartyModel);
 
         ui->thirdPartyPackList->setModel(thirdPartyFilterModel);
-        ui->thirdPartyPackList->setSortingEnabled(true);
-        ui->thirdPartyPackList->header()->hide();
-        ui->thirdPartyPackList->setIndentation(0);
-        ui->thirdPartyPackList->setIconSize(QSize(42, 42));
+        configurePackList(ui->thirdPartyPackList);
 
         thirdPartyFilterModel->setSorting(publicFilterModel->getCurrentSorting());
     }
@@ -98,13 +163,23 @@ Page::Page(NewInstanceDialog* dialog, QWidget* parent) : QWidget(parent), dialog
         privateFilterModel->setSourceModel(privateListModel);
 
         ui->privatePackList->setModel(privateFilterModel);
-        ui->privatePackList->setSortingEnabled(true);
-        ui->privatePackList->header()->hide();
-        ui->privatePackList->setIndentation(0);
-        ui->privatePackList->setIconSize(QSize(42, 42));
+        configurePackList(ui->privatePackList);
 
         privateFilterModel->setSorting(publicFilterModel->getCurrentSorting());
     }
+
+    ui->addPackBtn->setIcon(QIcon::fromTheme("new"));
+    ui->removePackBtn->setIcon(QIcon::fromTheme("delete"));
+    ui->addPackBtn->setCursor(Qt::PointingHandCursor);
+    ui->removePackBtn->setCursor(Qt::PointingHandCursor);
+    ui->removePackBtn->setEnabled(false);
+    ui->versionSelectionBox->setEnabled(false);
+    ui->tabWidget->setTabIcon(0, QIcon(QStringLiteral(":/pirate_legacy/ship.png")));
+    ui->tabWidget->setTabIcon(1, QIcon(QStringLiteral(":/pirate_legacy/swords.png")));
+    ui->tabWidget->setTabIcon(2, QIcon(QStringLiteral(":/pirate_legacy/skull.png")));
+    ui->tabWidget->setTabText(0, tr("Public Ships"));
+    ui->tabWidget->setTabText(1, tr("Blade Crews"));
+    ui->tabWidget->setTabText(2, tr("Private Cove"));
 
     ui->versionSelectionBox->view()->setVerticalScrollBarPolicy(Qt::ScrollBarAsNeeded);
     ui->versionSelectionBox->view()->setVerticalScrollMode(QAbstractItemView::ScrollPerPixel);
@@ -134,6 +209,135 @@ Page::Page(NewInstanceDialog* dialog, QWidget* parent) : QWidget(parent), dialog
     ui->thirdPartyPackList->setItemDelegate(new ProjectItemDelegate(this));
     ui->privatePackList->setItemDelegate(new ProjectItemDelegate(this));
     onTabChanged(ui->tabWidget->currentIndex());
+}
+
+void Page::applyLegacyVisualStyle()
+{
+    setStyleSheet(QStringLiteral(
+        "LegacyFTB--Page { background: transparent; }"
+        "#legacyLavaStrip {"
+        "  border: 1px solid #6d2c18;"
+        "  border-radius: 6px;"
+        "  background: #2b110c;"
+        "}"
+        "#legacyHero {"
+        "  background: #16202a;"
+        "  border: 1px solid #7b5b28;"
+        "  border-radius: 8px;"
+        "}"
+        "#legacyHeroIcon {"
+        "  background: #241a18;"
+        "  border: 1px solid #d6a342;"
+        "  border-radius: 8px;"
+        "}"
+        "#legacyHeroTitle {"
+        "  color: #f5d27a;"
+        "  font-size: 18px;"
+        "  font-weight: 700;"
+        "}"
+        "#legacyHeroSubtitle { color: #d7c7a2; }"
+        "QLineEdit#searchEdit {"
+        "  padding: 8px 10px;"
+        "  border: 1px solid #7b5b28;"
+        "  border-radius: 6px;"
+        "  background: palette(base);"
+        "}"
+        "QLineEdit#searchEdit:focus { border-color: #f29e35; }"
+        "QTabWidget::pane {"
+        "  border: 1px solid #7b5b28;"
+        "  border-radius: 6px;"
+        "  top: -1px;"
+        "}"
+        "QTabBar::tab {"
+        "  padding: 8px 14px;"
+        "  border: 1px solid #7b5b28;"
+        "  border-bottom: none;"
+        "  background: palette(window);"
+        "}"
+        "QTabBar::tab:selected {"
+        "  background: #1c2d39;"
+        "  color: #f5d27a;"
+        "  border-top: 2px solid #f29e35;"
+        "}"
+        "QTabBar::tab:hover:!selected { background: rgba(242, 158, 53, 36); }"
+        "QTreeView {"
+        "  border: none;"
+        "  background: palette(base);"
+        "  outline: 0;"
+        "  padding: 4px;"
+        "}"
+        "QTreeView::item {"
+        "  min-height: 64px;"
+        "  padding: 5px;"
+        "  border-radius: 6px;"
+        "}"
+        "QTreeView::item:hover { background: rgba(242, 158, 53, 32); }"
+        "QTreeView::item:selected {"
+        "  background: #284b58;"
+        "  color: #ffffff;"
+        "}"
+        "QTextBrowser {"
+        "  border: none;"
+        "  padding: 12px;"
+        "  background: #171d22;"
+        "  color: #eadfca;"
+        "}"
+        "QComboBox {"
+        "  min-height: 30px;"
+        "  padding-left: 8px;"
+        "  border: 1px solid #7b5b28;"
+        "  border-radius: 6px;"
+        "}"
+        "QPushButton#addPackBtn, QPushButton#removePackBtn {"
+        "  min-height: 30px;"
+        "  padding: 6px 10px;"
+        "  border-radius: 6px;"
+        "}"
+        "QPushButton#addPackBtn:hover { background: rgba(49, 85, 69, 45); }"
+        "QPushButton#removePackBtn:hover { background: rgba(160, 58, 58, 45); }"
+        "#legacyStatusLabel, #legacySelectedLabel {"
+        "  padding: 6px 10px;"
+        "  border: 1px solid #7b5b28;"
+        "  border-radius: 6px;"
+        "  background: #1b2329;"
+        "  color: #f5d27a;"
+        "}"
+    ));
+}
+
+void Page::configurePackList(QTreeView* list)
+{
+    list->setSortingEnabled(true);
+    list->header()->hide();
+    list->setIndentation(0);
+    list->setIconSize(QSize(52, 52));
+    list->setMouseTracking(true);
+    list->setSelectionBehavior(QAbstractItemView::SelectRows);
+    list->setSelectionMode(QAbstractItemView::SingleSelection);
+    list->setHorizontalScrollBarPolicy(Qt::ScrollBarAlwaysOff);
+    list->setAnimated(true);
+}
+
+void Page::updateFooterStatus()
+{
+    if (!currentModel || !statusLabel) {
+        return;
+    }
+
+    const int visiblePacks = currentModel->rowCount();
+    const int totalPacks = currentModel->sourceModel() ? currentModel->sourceModel()->rowCount() : visiblePacks;
+    const bool searching = !ui->searchEdit->text().trimmed().isEmpty();
+
+    if (searching && visiblePacks != totalPacks) {
+        statusLabel->setText(tr("%1 of %2 packs").arg(visiblePacks).arg(totalPacks));
+    } else {
+        statusLabel->setText(tr("%n pack(s)", "", visiblePacks));
+    }
+}
+
+void Page::updatePrivateActions()
+{
+    ui->removePackBtn->setEnabled(ui->tabWidget->currentIndex() == 2 && ui->privatePackList->currentIndex().isValid());
 }
 
 Page::~Page()
@@ -167,6 +371,10 @@ void Page::openedImpl()
 void Page::retranslate()
 {
     ui->retranslateUi(this);
+    ui->tabWidget->setTabText(0, tr("Public Ships"));
+    ui->tabWidget->setTabText(1, tr("Blade Crews"));
+    ui->tabWidget->setTabText(2, tr("Private Cove"));
+    updateFooterStatus();
 }
 
 void Page::suggestCurrent()
@@ -202,6 +410,7 @@ void Page::ftbPackDataDownloadSuccessfully(ModpackList publicPacks, ModpackList 
 {
     publicListModel->fill(publicPacks);
     thirdPartyModel->fill(thirdPartyPacks);
+    updateFooterStatus();
 }
 
 void Page::ftbPackDataDownloadFailed(QString reason)
@@ -217,6 +426,7 @@ void Page::ftbPackDataDownloadAborted()
 void Page::ftbPrivatePackDataDownloadSuccessfully(const Modpack& pack)
 {
     privateListModel->addPack(pack);
+    updateFooterStatus();
 }
 
 void Page::ftbPrivatePackDataDownloadFailed([[maybe_unused]] QString reason, QString packCode)
@@ -268,9 +478,22 @@ void Page::onPackSelectionChanged(Modpack* pack)
 {
     ui->versionSelectionBox->clear();
     if (pack) {
-        currentModpackInfo->setHtml(StringUtils::htmlListPatch("Pack by <b>" + pack->author + "</b>" + "<br>Minecraft " + pack->mcVersion +
-                                                               "<br>" + "<br>" + pack->description + "<ul><li>" +
-                                                               pack->mods.replace(";", "</li><li>") + "</li></ul>"));
+        QString mods = pack->mods;
+        mods.replace(";", "</li><li>");
+        const auto infoHtml =
+            QString("<style>"
+                    "body { font-family: sans-serif; }"
+                    "h2 { margin: 0 0 6px 0; }"
+                    ".meta { color: #d09c43; font-weight: 600; margin-bottom: 10px; }"
+                    "ul { margin-top: 8px; }"
+                    "li { margin-bottom: 3px; }"
+                    "</style>"
+                    "<h2>%1</h2>"
+                    "<div class=\"meta\">%2 &bull; Minecraft %3</div>"
+                    "<div>%4</div>"
+                    "<ul><li>%5</li></ul>")
+                .arg(pack->name, tr("Pack by %1").arg(pack->author), pack->mcVersion, pack->description, mods);
+        currentModpackInfo->setHtml(StringUtils::htmlListPatch(infoHtml));
         bool currentAdded = false;
 
         for (int i = 0; i < pack->oldVersions.size(); i++) {
@@ -284,14 +507,21 @@ void Page::onPackSelectionChanged(Modpack* pack)
             ui->versionSelectionBox->addItem(pack->currentVersion);
         }
         selected = *pack;
+        ui->versionSelectionBox->setEnabled(true);
+        selectedPackLabel->setText(pack->name);
     } else {
-        currentModpackInfo->setHtml("");
+        currentModpackInfo->setHtml(QString("<div style=\"padding: 18px; color: #777777;\">%1</div>").arg(tr("No pack selected")));
         ui->versionSelectionBox->clear();
+        ui->versionSelectionBox->setEnabled(false);
+        selectedPackLabel->setText(tr("No pack selected"));
+        selected = {};
         if (isOpened) {
             dialog->setSuggestedPack();
         }
+        updatePrivateActions();
         return;
     }
+    updatePrivateActions();
     suggestCurrent();
 }
 
@@ -303,6 +533,9 @@ void Page::onVersionSelectionItemChanged(QString version)
     }
 
     selectedVersion = version;
+    if (!selected.name.isEmpty()) {
+        selectedPackLabel->setText(tr("%1 - %2").arg(selected.name, selectedVersion));
+    }
     suggestCurrent();
 }
 
@@ -312,6 +545,7 @@ void Page::onSortingSelectionChanged(QString sort)
     publicFilterModel->setSorting(toSet);
     thirdPartyFilterModel->setSorting(toSet);
     privateFilterModel->setSorting(toSet);
+    updateFooterStatus();
 }
 
 void Page::onTabChanged(int tab)
@@ -320,17 +554,21 @@ void Page::onTabChanged(int tab)
         currentModel = thirdPartyFilterModel;
         currentList = ui->thirdPartyPackList;
         currentModpackInfo = ui->thirdPartyPackDescription;
+        ui->searchEdit->setPlaceholderText(tr("Search third-party legacy packs..."));
     } else if (tab == 2) {
         currentModel = privateFilterModel;
         currentList = ui->privatePackList;
         currentModpackInfo = ui->privatePackDescription;
+        ui->searchEdit->setPlaceholderText(tr("Search private pack codes or names..."));
     } else {
         currentModel = publicFilterModel;
         currentList = ui->publicPackList;
         currentModpackInfo = ui->publicPackDescription;
+        ui->searchEdit->setPlaceholderText(tr("Search public legacy packs..."));
     }
 
     triggerSearch();
+    updatePrivateActions();
 
     currentList->selectionModel()->reset();
     QModelIndex idx = currentList->currentIndex();
@@ -360,8 +598,9 @@ void Page::onRemovePackClicked()
     if (!index.isValid()) {
         return;
     }
-    auto row = index.row();
-    Modpack pack = privateListModel->at(row);
+    auto raw = privateFilterModel->data(index, Qt::UserRole);
+    Q_ASSERT(raw.canConvert<Modpack>());
+    Modpack pack = raw.value<Modpack>();
     auto answer = QMessageBox::question(this, tr("Remove pack"), tr("Are you sure you want to remove pack %1?").arg(pack.name),
                                         QMessageBox::Yes | QMessageBox::No);
     if (answer != QMessageBox::Yes) {
@@ -369,13 +608,16 @@ void Page::onRemovePackClicked()
     }
 
     ftbPrivatePacks->remove(pack.packCode);
-    privateListModel->remove(row);
+    privateListModel->remove(privateFilterModel->mapToSource(index).row());
     onPackSelectionChanged();
+    updateFooterStatus();
 }
 
 void Page::triggerSearch()
 {
     currentModel->setSearchTerm(ui->searchEdit->text());
+    updateFooterStatus();
+    updatePrivateActions();
 }
 
 void Page::setSearchTerm(QString term)

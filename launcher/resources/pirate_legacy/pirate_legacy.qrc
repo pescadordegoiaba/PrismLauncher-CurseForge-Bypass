@@ -1,0 +1,10 @@
+<!DOCTYPE RCC>
+<RCC version="1.0">
+    <qresource prefix="/pirate_legacy">
+        <file alias="lava_retro.gif">lava_retro.gif</file>
+        <file alias="pirate_emblem.png">pirate_emblem.png</file>
+        <file alias="ship.png">ship.png</file>
+        <file alias="skull.png">skull.png</file>
+        <file alias="swords.png">swords.png</file>
+    </qresource>
+</RCC>

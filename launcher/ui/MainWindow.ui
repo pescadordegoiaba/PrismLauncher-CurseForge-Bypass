@@ -50,9 +50,12 @@
     <bool>false</bool>
    </attribute>
    <addaction name="actionAddInstance"/>
+   <addaction name="actionCreateLocalServer"/>
    <addaction name="separator"/>
    <addaction name="actionFoldersButton"/>
    <addaction name="actionSettings"/>
+   <addaction name="actionAddToPATH"/>
+   <addaction name="actionClearStorageData"/>
    <addaction name="actionHelpButton"/>
    <addaction name="actionCheckUpdate"/>
    <addaction name="separator"/>
@@ -116,6 +119,7 @@
    </attribute>
    <addaction name="actionLaunchInstance"/>
    <addaction name="actionKillInstance"/>
+   <addaction name="actionCreateLocalServer"/>
    <addaction name="separator"/>
    <addaction name="actionEditInstance"/>
    <addaction name="actionChangeInstGroup"/>
@@ -145,6 +149,7 @@
     <addaction name="separator"/>
     <addaction name="actionLaunchInstance"/>
     <addaction name="actionKillInstance"/>
+    <addaction name="actionCreateLocalServer"/>
     <addaction name="separator"/>
     <addaction name="actionEditInstance"/>
     <addaction name="actionChangeInstGroup"/>
@@ -155,6 +160,8 @@
     <addaction name="actionCreateInstanceShortcut"/>
     <addaction name="separator"/>
     <addaction name="actionSettings"/>
+    <addaction name="actionAddToPATH"/>
+    <addaction name="actionClearStorageData"/>
     <addaction name="actionCloseWindow"/>
    </widget>
    <widget class="QMenu" name="editMenu">
@@ -214,6 +221,7 @@
      <bool>true</bool>
     </property>
     <addaction name="actionClearMetadata"/>
+    <addaction name="actionClearStorageData"/>
     <addaction name="actionReportBug"/>
     <addaction name="actionViewLog"/>
     <addaction name="actionAddToPATH"/>
@@ -353,6 +361,17 @@
    </property>
    <property name="shortcut">
     <string>Ctrl+K</string>
+   </property>
+  </action>
+  <action name="actionCreateLocalServer">
+   <property name="icon">
+    <iconset theme="server"/>
+   </property>
+   <property name="text">
+    <string>Create Server</string>
+   </property>
+   <property name="toolTip">
+    <string>Create and manage a local offline server for the selected instance.</string>
    </property>
   </action>
   <action name="actionRenameInstance">
@@ -680,10 +699,21 @@
     <iconset theme="custom-commands"/>
    </property>
    <property name="text">
-    <string>Install to &amp;PATH</string>
+    <string>&amp;Install to System</string>
    </property>
    <property name="toolTip">
-    <string>Install a %1 symlink to /usr/local/bin</string>
+    <string>Install %1 into the current user's application menu and PATH.</string>
+   </property>
+  </action>
+  <action name="actionClearStorageData">
+   <property name="icon">
+    <iconset theme="delete"/>
+   </property>
+   <property name="text">
+    <string>Clear &amp;Storage Data...</string>
+   </property>
+   <property name="toolTip">
+    <string>Delete instances, mods, caches, logs, managed Java runtimes, and other storage-heavy launcher data.</string>
    </property>
   </action>
   <action name="actionFoldersButton">

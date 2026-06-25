@@ -870,6 +870,8 @@ SET(LAUNCHER_SOURCES
     ui/themes/CustomTheme.h
     ui/themes/DarkTheme.cpp
     ui/themes/DarkTheme.h
+    ui/themes/PirateLavaTheme.cpp
+    ui/themes/PirateLavaTheme.h
     ui/themes/ITheme.cpp
     ui/themes/ITheme.h
     ui/themes/HintOverrideProxyStyle.cpp
@@ -1053,6 +1055,8 @@ SET(LAUNCHER_SOURCES
     ui/dialogs/CopyInstanceDialog.h
     ui/dialogs/CreateShortcutDialog.cpp
     ui/dialogs/CreateShortcutDialog.h
+    ui/dialogs/LocalServerDialog.cpp
+    ui/dialogs/LocalServerDialog.h
     ui/dialogs/CustomMessageBox.cpp
     ui/dialogs/CustomMessageBox.h
     ui/dialogs/ExportInstanceDialog.cpp
@@ -1292,6 +1296,7 @@ qt_add_resources(LAUNCHER_RESOURCES
     resources/flat/flat.qrc
     resources/flat_white/flat_white.qrc
     resources/documents/documents.qrc
+    resources/pirate_legacy/pirate_legacy.qrc
     resources/shaders/shaders.qrc
     "${CMAKE_CURRENT_BINARY_DIR}/../${Launcher_Branding_LogoQRC}"
 )
@@ -1318,6 +1323,25 @@ if(${Launcher_USE_PCH})
     )
 endif()
 
+####### Cracked / Offline modular layer (PrismLauncher-Cracked) ########
+if(ENABLE_CRACKED_MODE)
+    message(STATUS "ENABLE_CRACKED_MODE is ON - building with modular offline support")
+    add_definitions(-DPRISMLAUNCHER_CRACKED)
+
+    # Include our cracked module
+    add_subdirectory(cracked)
+
+    # Append the cracked implementation files
+    list(APPEND LAUNCHER_SOURCES
+        cracked/CrackedAccountManager.cpp
+        cracked/OfflineSkinManager.cpp
+        cracked/CrackedUtils.cpp
+    )
+
+    # The cracked/ subdir also builds a small helper static lib
+    list(APPEND Launcher_logic_EXTRA_LIBS PrismLauncher_Cracked)
+endif()
+
 ####### Targets ########
 
 # Add executable
@@ -1337,6 +1361,11 @@ target_link_libraries(Launcher_logic
     BuildConfig
     Qt${QT_VERSION_MAJOR}::Widgets
 )
+
+if(ENABLE_CRACKED_MODE)
+    target_link_libraries(Launcher_logic PrismLauncher_Cracked)
+    target_include_directories(Launcher_logic PUBLIC ${CMAKE_CURRENT_SOURCE_DIR}/cracked)
+endif()
 
 if(TARGET PkgConfig::libqrencode)
     target_link_libraries(Launcher_logic PkgConfig::libqrencode)
@@ -1561,6 +1590,9 @@ foreach(target ${Launcher_TARGETS})
         target_compile_options(${target} PRIVATE /W4 /WX /permissive-)
     else()
         target_compile_options(${target} PRIVATE -Wall -Wextra -Wpedantic -Werror)
+        if(CMAKE_CXX_COMPILER_ID MATCHES "GNU|Clang")
+            target_compile_options(${target} PRIVATE -Wno-error=invalid-pch -Wno-error=sfinae-incomplete)
+        endif()
     endif()
 endforeach()
 

@@ -136,9 +136,11 @@ class MainWindow : public QMainWindow {
 
     void on_actionClearMetadata_triggered();
 
-#ifdef Q_OS_MAC
+#if defined(Q_OS_MAC) || defined(Q_OS_LINUX)
     void on_actionAddToPATH_triggered();
 #endif
+
+    void on_actionClearStorageData_triggered();
 
     void on_actionOpenWiki_triggered();
 
@@ -166,6 +168,8 @@ class MainWindow : public QMainWindow {
     void on_actionEditInstance_triggered();
 
     void on_actionCreateInstanceShortcut_triggered();
+
+    void on_actionCreateLocalServer_triggered();
 
     void taskEnd();
 

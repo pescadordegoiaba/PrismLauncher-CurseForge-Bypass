@@ -38,6 +38,7 @@
 
 #include "ModFolderPage.h"
 #include "minecraft/mod/Resource.h"
+#include "MMCZip.h"
 #include "ui/dialogs/ExportToModListDialog.h"
 #include "ui/dialogs/InstallLoaderDialog.h"
 #include "ui_ExternalResourcesPage.h"
@@ -45,6 +46,7 @@
 #include <QAbstractItemModel>
 #include <QAction>
 #include <QEvent>
+#include <QFileDialog>
 #include <QKeyEvent>
 #include <QMenu>
 #include <QMessageBox>
@@ -108,6 +110,12 @@ ModFolderPage::ModFolderPage(BaseInstance* inst, ModFolderModel* model, QWidget*
     ui->actionExportMetadata->setToolTip(tr("Export mod's metadata to text."));
     connect(ui->actionExportMetadata, &QAction::triggered, this, &ModFolderPage::exportModMetadata);
     ui->actionsToolbar->insertActionAfter(ui->actionViewHomepage, ui->actionExportMetadata);
+
+    auto* useClientSync = new QAction(tr("Use Client-Sync"), this);
+    useClientSync->setToolTip(tr("Apply a Prism local server client-sync zip to this instance."));
+    useClientSync->setIcon(QIcon::fromTheme("view-refresh"));
+    connect(useClientSync, &QAction::triggered, this, &ModFolderPage::useClientSync);
+    ui->actionsToolbar->insertActionAfter(ui->actionAddItem, useClientSync);
 
     ui->actionsToolbar->insertActionAfter(ui->actionViewFolder, ui->actionViewConfigs);
 }
@@ -298,6 +306,45 @@ void ModFolderPage::updateMods(bool includeDeps)
 
         m_model->update();
     }
+}
+
+void ModFolderPage::useClientSync()
+{
+    if (m_instance != nullptr && m_instance->isRunning()) {
+        QMessageBox::warning(this, tr("Instance running"), tr("Close Minecraft before applying a client-sync pack."));
+        return;
+    }
+
+    const auto zipPath = QFileDialog::getOpenFileName(this, tr("Select client-sync zip"), m_instance->gameRoot(),
+                                                      tr("Client-sync zip (*.zip);;All files (*)"));
+    if (zipPath.isEmpty()) {
+        return;
+    }
+
+    MMCZip::ArchiveReader zip(zipPath);
+    if (!zip.collectFiles() || !zip.exists("prism-client-sync.json")) {
+        QMessageBox::warning(this, tr("Invalid client-sync pack"), tr("This zip does not contain prism-client-sync.json."));
+        return;
+    }
+
+    const auto response = CustomMessageBox::selectable(
+                              this, tr("Apply Client-Sync"),
+                              tr("This will extract server mods and configs into this instance and may overwrite existing files.\n"
+                                 "Continue?"),
+                              QMessageBox::Warning, QMessageBox::Yes | QMessageBox::No, QMessageBox::No)
+                              ->exec();
+    if (response != QMessageBox::Yes) {
+        return;
+    }
+
+    auto result = MMCZip::extractDir(zipPath, m_instance->gameRoot());
+    if (!result.has_value()) {
+        QMessageBox::critical(this, tr("Client-sync failed"), tr("Could not extract the client-sync pack."));
+        return;
+    }
+
+    m_model->update();
+    QMessageBox::information(this, tr("Client-sync applied"), tr("Client-sync pack applied. Launch the instance to join the server."));
 }
 
 void ModFolderPage::deleteModMetadata()
