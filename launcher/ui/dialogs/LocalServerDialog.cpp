@@ -86,6 +86,18 @@ int compareVersions(const QString& left, const QString& right)
     return QString::compare(left, right, Qt::CaseInsensitive);
 }
 
+bool bareVersionMatches(const QString& currentVersion, const QString& expectedVersion)
+{
+    const auto expected = expectedVersion.trimmed();
+    if (expected.isEmpty()) {
+        return true;
+    }
+    if (compareVersions(currentVersion, expected) == 0) {
+        return true;
+    }
+    return currentVersion.startsWith(expected + ".", Qt::CaseInsensitive);
+}
+
 bool versionRangeMatches(const QString& currentVersion, QString range)
 {
     range = range.trimmed();
@@ -135,7 +147,7 @@ bool versionRangeMatches(const QString& currentVersion, QString range)
         return compareVersions(currentVersion, range.mid(1).trimmed()) == 0;
     }
 
-    return compareVersions(currentVersion, range) == 0;
+    return bareVersionMatches(currentVersion, range);
 }
 }  // namespace
 
@@ -1126,8 +1138,8 @@ bool LocalServerDialog::isServerCompatibleModFile(const QFileInfo& file, QString
                 if (environment == "client") {
                     compatible = false;
                     reason = QObject::tr("client environment");
+                    stop = true;
                 }
-                stop = true;
                 return true;
             }
             if (path == "META-INF/mods.toml" || path == "META-INF/neoforge.mods.toml") {
@@ -1137,6 +1149,8 @@ bool LocalServerDialog::isServerCompatibleModFile(const QFileInfo& file, QString
                 if (lowerToml.contains("displaytest") && lowerToml.contains("ignore_server_version")) {
                     compatible = false;
                     reason = QObject::tr("client-only Forge/NeoForge display test");
+                    stop = true;
+                    return true;
                 }
 
                 QRegularExpression dependencyBlockExpression(
@@ -1162,9 +1176,25 @@ bool LocalServerDialog::isServerCompatibleModFile(const QFileInfo& file, QString
                     if (!versionRangeMatches(actualVersion, expectedRange)) {
                         compatible = false;
                         reason = QObject::tr("%1 %2 required, current %3").arg(modId, expectedRange, actualVersion);
+                        stop = true;
                     }
                 }
-                stop = true;
+                return true;
+            }
+            if (path.startsWith("data/") && path.endsWith(".json")) {
+                const auto dataJson = QString::fromUtf8(entry->readAll());
+                const QStringList legacyRegistryKeys = {
+                    "minecraft:generic.",
+                    "minecraft:player.",
+                };
+                for (const auto& key : legacyRegistryKeys) {
+                    if (dataJson.contains(key)) {
+                        compatible = false;
+                        reason = QObject::tr("datapack uses legacy registry key %1").arg(key);
+                        stop = true;
+                        return true;
+                    }
+                }
                 return true;
             }
             entry->skip();
@@ -1173,7 +1203,7 @@ bool LocalServerDialog::isServerCompatibleModFile(const QFileInfo& file, QString
         return true;
     }
 
-    if (!metadataFound) {
+    if (!metadataFound && compatible) {
         return true;
     }
     return compatible;
