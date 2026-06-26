@@ -56,6 +56,89 @@
 #include "minecraft/PackProfile.h"
 #include "settings/SettingsObject.h"
 
+namespace {
+QList<int> versionParts(const QString& version)
+{
+    QList<int> parts;
+    QRegularExpression numberExpression("(\\d+)");
+    auto matchIterator = numberExpression.globalMatch(version);
+    while (matchIterator.hasNext()) {
+        parts.append(matchIterator.next().captured(1).toInt());
+    }
+    return parts;
+}
+
+int compareVersions(const QString& left, const QString& right)
+{
+    const auto leftParts = versionParts(left);
+    const auto rightParts = versionParts(right);
+    const auto count = qMax(leftParts.size(), rightParts.size());
+    for (int i = 0; i < count; ++i) {
+        const auto l = i < leftParts.size() ? leftParts.at(i) : 0;
+        const auto r = i < rightParts.size() ? rightParts.at(i) : 0;
+        if (l < r) {
+            return -1;
+        }
+        if (l > r) {
+            return 1;
+        }
+    }
+    return QString::compare(left, right, Qt::CaseInsensitive);
+}
+
+bool versionRangeMatches(const QString& currentVersion, QString range)
+{
+    range = range.trimmed();
+    if (range.isEmpty() || range == "*" || range == "[*,)" || range == "(,)") {
+        return true;
+    }
+
+    if ((range.startsWith('[') || range.startsWith('(')) && (range.endsWith(']') || range.endsWith(')'))) {
+        const bool includeMinimum = range.startsWith('[');
+        const bool includeMaximum = range.endsWith(']');
+        const auto body = range.mid(1, range.size() - 2);
+
+        if (!body.contains(',')) {
+            return compareVersions(currentVersion, body.trimmed()) == 0;
+        }
+
+        const auto minimum = body.section(',', 0, 0).trimmed();
+        const auto maximum = body.section(',', 1, 1).trimmed();
+        if (!minimum.isEmpty()) {
+            const auto minimumCompare = compareVersions(currentVersion, minimum);
+            if (minimumCompare < 0 || (!includeMinimum && minimumCompare == 0)) {
+                return false;
+            }
+        }
+        if (!maximum.isEmpty()) {
+            const auto maximumCompare = compareVersions(currentVersion, maximum);
+            if (maximumCompare > 0 || (!includeMaximum && maximumCompare == 0)) {
+                return false;
+            }
+        }
+        return true;
+    }
+
+    if (range.startsWith(">=")) {
+        return compareVersions(currentVersion, range.mid(2).trimmed()) >= 0;
+    }
+    if (range.startsWith("<=")) {
+        return compareVersions(currentVersion, range.mid(2).trimmed()) <= 0;
+    }
+    if (range.startsWith(">")) {
+        return compareVersions(currentVersion, range.mid(1).trimmed()) > 0;
+    }
+    if (range.startsWith("<")) {
+        return compareVersions(currentVersion, range.mid(1).trimmed()) < 0;
+    }
+    if (range.startsWith("=")) {
+        return compareVersions(currentVersion, range.mid(1).trimmed()) == 0;
+    }
+
+    return compareVersions(currentVersion, range) == 0;
+}
+}  // namespace
+
 LocalServerDialog::LocalServerDialog(BaseInstance* instance, QWidget* parent) : QDialog(parent), m_instance(instance), m_process(new QProcess(this))
 {
     setWindowTitle(tr("Create Server - %1").arg(instance->name()));
@@ -1029,7 +1112,12 @@ bool LocalServerDialog::isServerCompatibleModFile(const QFileInfo& file, QString
     MMCZip::ArchiveReader zip(file.absoluteFilePath());
     bool compatible = true;
     bool metadataFound = false;
-    if (!zip.parse([&compatible, &metadataFound, &reason](MMCZip::ArchiveReader::File* entry, bool& stop) {
+    const QMap<QString, QString> dependencyVersions = {
+        { "minecraft", minecraftVersion() },
+        { "neoforge", componentVersion("net.neoforged") },
+        { "forge", componentVersion("net.minecraftforge") },
+    };
+    if (!zip.parse([&compatible, &metadataFound, &reason, dependencyVersions](MMCZip::ArchiveReader::File* entry, bool& stop) {
             const auto path = entry->filename();
             if (path == "fabric.mod.json" || path == "quilt.mod.json") {
                 metadataFound = true;
@@ -1044,10 +1132,37 @@ bool LocalServerDialog::isServerCompatibleModFile(const QFileInfo& file, QString
             }
             if (path == "META-INF/mods.toml" || path == "META-INF/neoforge.mods.toml") {
                 metadataFound = true;
-                const auto toml = QString::fromUtf8(entry->readAll()).toLower();
-                if (toml.contains("displaytest") && toml.contains("ignore_server_version")) {
+                const auto toml = QString::fromUtf8(entry->readAll());
+                const auto lowerToml = toml.toLower();
+                if (lowerToml.contains("displaytest") && lowerToml.contains("ignore_server_version")) {
                     compatible = false;
                     reason = QObject::tr("client-only Forge/NeoForge display test");
+                }
+
+                QRegularExpression dependencyBlockExpression(
+                    "\\[\\[dependencies\\.[^\\]]+\\]\\](.*?)(?=\\n\\s*\\[\\[|\\z)", QRegularExpression::DotMatchesEverythingOption);
+                auto dependencyIterator = dependencyBlockExpression.globalMatch(toml);
+                while (dependencyIterator.hasNext() && compatible) {
+                    const auto block = dependencyIterator.next().captured(1);
+                    const auto modIdMatch = QRegularExpression("modId\\s*=\\s*\"([^\"]+)\"").match(block);
+                    const auto rangeMatch = QRegularExpression("versionRange\\s*=\\s*\"([^\"]+)\"").match(block);
+                    const auto typeMatch = QRegularExpression("type\\s*=\\s*\"([^\"]+)\"").match(block);
+                    if (!modIdMatch.hasMatch() || !rangeMatch.hasMatch()) {
+                        continue;
+                    }
+
+                    const auto modId = modIdMatch.captured(1).toLower();
+                    const auto expectedRange = rangeMatch.captured(1);
+                    const auto dependencyType = typeMatch.hasMatch() ? typeMatch.captured(1).toLower() : QString("required");
+                    if (dependencyType != "required" || !dependencyVersions.contains(modId) || dependencyVersions.value(modId).isEmpty()) {
+                        continue;
+                    }
+
+                    const auto actualVersion = dependencyVersions.value(modId);
+                    if (!versionRangeMatches(actualVersion, expectedRange)) {
+                        compatible = false;
+                        reason = QObject::tr("%1 %2 required, current %3").arg(modId, expectedRange, actualVersion);
+                    }
                 }
                 stop = true;
                 return true;
