@@ -45,8 +45,13 @@
 
 #include <QAbstractItemModel>
 #include <QAction>
+#include <QDir>
 #include <QEvent>
 #include <QFileDialog>
+#include <QFileInfo>
+#include <QJsonArray>
+#include <QJsonDocument>
+#include <QJsonObject>
 #include <QKeyEvent>
 #include <QMenu>
 #include <QMessageBox>
@@ -327,14 +332,41 @@ void ModFolderPage::useClientSync()
         return;
     }
 
+    QStringList requiredMods;
+    if (auto manifestFile = zip.goToFile("prism-client-sync.json")) {
+        const auto manifest = QJsonDocument::fromJson(manifestFile->readAll()).object();
+        for (const auto& fileValue : manifest.value("files").toArray()) {
+            const auto relative = fileValue.toString();
+            if (relative.startsWith("mods/") && !relative.mid(5).contains('/')) {
+                requiredMods << QFileInfo(relative).fileName();
+            }
+        }
+    }
+
     const auto response = CustomMessageBox::selectable(
                               this, tr("Apply Client-Sync"),
                               tr("This will extract server mods and configs into this instance and may overwrite existing files.\n"
+                                 "Local mod jars that are not required by the server sync pack will be removed.\n"
                                  "Continue?"),
                               QMessageBox::Warning, QMessageBox::Yes | QMessageBox::No, QMessageBox::No)
                               ->exec();
     if (response != QMessageBox::Yes) {
         return;
+    }
+
+    QStringList removedMods;
+    if (!requiredMods.isEmpty()) {
+        QDir modsDir(FS::PathCombine(m_instance->gameRoot(), "mods"));
+        const auto localMods = modsDir.entryInfoList(QDir::Files | QDir::NoDotAndDotDot, QDir::Name);
+        for (const auto& localMod : localMods) {
+            const auto lowerName = localMod.fileName().toLower();
+            if ((!lowerName.endsWith(".jar") && !lowerName.endsWith(".jar.disabled")) || requiredMods.contains(localMod.fileName())) {
+                continue;
+            }
+            if (QFile::remove(localMod.absoluteFilePath())) {
+                removedMods << localMod.fileName();
+            }
+        }
     }
 
     auto result = MMCZip::extractDir(zipPath, m_instance->gameRoot());
@@ -344,7 +376,11 @@ void ModFolderPage::useClientSync()
     }
 
     m_model->update();
-    QMessageBox::information(this, tr("Client-sync applied"), tr("Client-sync pack applied. Launch the instance to join the server."));
+    auto message = tr("Client-sync pack applied. Launch the instance to join the server.");
+    if (!removedMods.isEmpty()) {
+        message += tr("\n\nRemoved local-only mods:\n%1").arg(removedMods.join('\n'));
+    }
+    QMessageBox::information(this, tr("Client-sync applied"), message);
 }
 
 void ModFolderPage::deleteModMetadata()
