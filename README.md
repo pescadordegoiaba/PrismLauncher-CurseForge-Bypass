@@ -12,6 +12,8 @@ Este projeto não é afiliado ao Prism Launcher oficial, Mojang, Microsoft ou Cu
 
 > Aviso: use somente em ambientes offline, LAN, Hamachi ou servidores privados. Não use contas Microsoft/Mojang oficiais neste launcher.
 
+# Operative Lgbt
+
 ## Downloads
 
 As builds deste fork ficam em:
